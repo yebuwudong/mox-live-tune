@@ -1,0 +1,27 @@
+#!name=mox.live 外观定制
+#!desc=改写 mox.live 的界面外观：配色、字号行高、卡片圆角投影、图片自适应、滚动条。纯 CSS 注入，不改动任何脚本逻辑、接口与权限判断。
+#!author=yebuwudong
+#!version=2.0.0
+
+# ============================================================
+# 原理
+#
+# 站点是 Inertia + Vue 的 SPA，首次访问返回完整 HTML 文档，
+# 后续路由切换由前端接管、不再请求 HTML。
+# 因此本模块只在 HTML 文档响应里注入一段 <style>，
+# 由浏览器解析，对首屏与之后所有路由都生效。
+#
+# 配色走站点自带的 --mx-* 变量体系（实测自 purify-BLSZtWZ3.css）：
+#   :root      { --mx-bg: 242 243 245; --mx-surface: 255 255 255; ... }
+#   :root.dark { --mx-bg: 15 17 21;   --mx-surface: 24 27 33;  ... }
+# 值是 RGB 三元组，故覆写时必须写 `rgb(var(--mx-x) / alpha)` 形式。
+# 站点原有的暗色切换（html.dark / localStorage['mx-theme']）保持可用。
+#
+# pattern 只匹配页面导航，排除静态资源与接口，避免多余开销。
+# ============================================================
+
+[Script]
+mox-theme = type=http-response,pattern=^https?://mox\.live/(?!build/|api/|images/|static/|go/|login),requires-body=true,max-size=2097152,script-path=https://raw.githubusercontent.com/yebuwudong/mox-live-tune/main/scripts/theme.js,script-update-interval=86400,timeout=10
+
+[MITM]
+hostname = %APPEND% mox.live
