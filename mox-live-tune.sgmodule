@@ -1,0 +1,43 @@
+#!name=mox.live 论坛优化
+#!desc=针对 mox.live 的实测优化：静态资源长缓存、API 短缓存、限流与下载接口观测。不修改任何业务字段、不改变权限判断、不改动分流策略。
+#!author=yebuwudong
+#!version=1.0.1
+
+# ============================================================
+# 实测依据（Surge 抓包，iPhone 经新加坡节点）
+#
+#   GET  /build/assets/*.js|css
+#        cache-control: max-age=43200  +  ETag   → 12h 后必然重新协商
+#        文件名自带 contenthash，实际可永久缓存
+#
+#   POST /api/forum/landing            41,215 B (gzip)  no-cache, private
+#   GET  /api/forum/thread/{tid}         1,711 B (gzip)  no-cache, private
+#   GET  /api/forum/thread/{tid}/posts   4,910 B (gzip)  no-cache, private
+#        → 每次进页面全量重取；服务端 x-ratelimit-limit: 30
+#
+#   POST /api/forum/attachments/download
+#        {"data":{"is_paid":false,"filename":"","raw_name":"",
+#                 "temporary_link":".../attachments/download-file"}}
+#        → 本模块只读打印，绝不改写
+#
+#   图片 CDN cdn2.moxing.rest 已是 immutable, max-age=2592000，无需处理
+#
+# 已刻意不做的事：
+#   · 不设 DIRECT 分流 —— 实测 mox.live 直连超时，强制直连会断流
+#   · 不改写头像 301 —— 该 301 来自"用户无头像"落占位图，
+#     统一重写会把真实头像也换掉
+#   · 不裁剪 URL 参数 —— 页面链接参与了前端路由状态
+# ============================================================
+
+[Script]
+# 静态资源：强制一年长缓存，去掉 ETag/Last-Modified 避免 304 反复协商
+mox-static-cache = type=http-response,pattern=^https?://mox\.live/build/assets/,requires-body=false,max-size=0,script-path=https://raw.githubusercontent.com/yebuwudong/mox-live-tune/main/scripts/static-cache.js,script-update-interval=86400,timeout=5
+
+# API：放宽本地缓存时长，并把限流余量打到日志
+mox-api-cache = type=http-response,pattern=^https?://mox\.live/api/forum/(landing|thread/\d+|thread/\d+/posts),requires-body=false,max-size=0,script-path=https://raw.githubusercontent.com/yebuwudong/mox-live-tune/main/scripts/api-cache.js,script-update-interval=86400,timeout=5
+
+# 附件下载：只读观测服务端返回的原始字段
+mox-download-observe = type=http-response,pattern=^https?://mox\.live/api/forum/attachments/download,requires-body=true,max-size=65536,script-path=https://raw.githubusercontent.com/yebuwudong/mox-live-tune/main/scripts/download-observe.js,script-update-interval=86400,timeout=5
+
+[MITM]
+hostname = %APPEND% mox.live
